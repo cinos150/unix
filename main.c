@@ -5,14 +5,13 @@
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
-#include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <netinet/in.h>
 #include <signal.h>
-#include <netdb.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include "Utilities.h"
+
 #define ERR(source) (perror(source),\
 		     fprintf(stderr,"%s:%d\n",__FILE__,__LINE__),\
 		     exit(EXIT_FAILURE))
@@ -38,6 +37,14 @@ typedef struct
     sem_t *semaphore;
 } thread_arg;
 
+
+typedef struct {
+    char *login;
+    int socket;
+    char *password;
+
+}User;
+
 void siginthandler(int sig)
 {
     work = 0;
@@ -59,45 +66,8 @@ void sethandler(void (*f)(int), int sigNo)
         ERR("sigaction");
 }
 
-ssize_t bulk_read(int fd, char *buf, size_t count)
-{
-    int c;
-    size_t len = 0;
 
-    do
-    {
-        c = TEMP_FAILURE_RETRY(read(fd, buf, count));
-        if (c < 0)
-            return c;
-        if (c == 0)
-            return len;
-        buf += c;
-        len += c;
-        count -= c;
-    }
-    while (count > 0);
 
-    return len;
-}
-
-ssize_t bulk_write(int fd, char *buf, size_t count)
-{
-    int c;
-    size_t len = 0;
-
-    do
-    {
-        c = TEMP_FAILURE_RETRY(write(fd, buf, count));
-        if(c < 0)
-            return c;
-        buf += c;
-        len += c;
-        count -= c;
-    }
-    while (count > 0);
-
-    return len;
-}
 
 int make_socket(int domain, int type)
 {
@@ -109,34 +79,20 @@ int make_socket(int domain, int type)
     return sock;
 }
 
-void communicate(int clientfd, thread_arg *targ)
+void communicate(int clientfd)
 {
-    int fd;
     ssize_t size;
-    char filepath[NMMAX+1];
-    char buffer[CHUNKSIZE];
+    char login_password[NMMAX+1];
+   // char buffer[CHUNKSIZE];
 
-    if ((size = TEMP_FAILURE_RETRY(recv(clientfd, filepath, NMMAX + 1, MSG_WAITALL))) == -1)
+    if ((size = TEMP_FAILURE_RETRY(recv(clientfd, login_password, NMMAX + 1, MSG_WAITALL))) == -1)
         ERR("read");
-    if (size == NMMAX + 1)
-    {
-        if (TEMP_FAILURE_RETRY(sem_wait(targ->semaphore)) == -1)
-            ERR("sem_wait");
-        if ((fd = TEMP_FAILURE_RETRY(open(filepath, O_RDONLY))) == -1)
-            sprintf(buffer, ERRSTRING);
-        else
-        {
-            memset(buffer, 0x00, CHUNKSIZE);
-            if ((size = bulk_read(fd, buffer, CHUNKSIZE)) == -1)
-                ERR("read");
-        }
-        if (sem_post(targ->semaphore) == -1)
-            ERR("sem_post");
-        if (TEMP_FAILURE_RETRY(send(clientfd, buffer, CHUNKSIZE, 0)) == -1)
-            ERR("write");
-    }
-    if (TEMP_FAILURE_RETRY(close(clientfd)) < 0)
-        ERR("close");
+
+    login_password[size] = '\0';
+
+    printf("%s", login_password);
+
+
 }
 
 void cleanup(void *arg)
@@ -146,53 +102,35 @@ void cleanup(void *arg)
 
 void *threadfunc(void *arg)
 {
-    int clientfd;
+    char ** result;
+    char  response_message[NMMAX +1];
+   // int clientfd;
     thread_arg targ;
-
+    ssize_t size;
+    User *args= (User*) arg;
     memcpy(&targ, arg, sizeof(targ));
 
-    while (1)
+
+    while(work)
     {
-        pthread_cleanup_push(cleanup, (void *) targ.mutex);
-                if (pthread_mutex_lock(targ.mutex) != 0)
-                    ERR("pthread_mutex_lock");
-                (*targ.idlethreads)++;
-                while (!*targ.condition && work)
-                    if (pthread_cond_wait(targ.cond, targ.mutex) != 0)
-                        ERR("pthread_cond_wait");
-                *targ.condition = 0;
-                if (!work)
-                    pthread_exit(NULL);
-                (*targ.idlethreads)--;
-                clientfd = *targ.socket;
-        pthread_cleanup_pop(1);
-        communicate(clientfd, &targ);
+        if((size = TEMP_FAILURE_RETRY(recv(args->socket, response_message, NMMAX + 1, MSG_WAITALL))) == 0)
+            break;
+
+        response_message[size] = '\0';
+
+        printf("%s",response_message);
+        result = str_split(response_message,' ');
+
+        if(sizeof(result)/sizeof(result[0]) > 2)
+            printf("Elo");
+        else
+            printf("Mordeczki");
+
     }
 
     return NULL;
 }
 
-void init(pthread_t *thread, thread_arg *targ, sem_t *semaphore, pthread_cond_t *cond, pthread_mutex_t *mutex, int *idlethreads, int *socket, int *condition)
-{
-    int i;
-
-    if (sem_init(semaphore, 0, FS_NUM) != 0)
-        ERR("sem_init");
-
-    for (i = 0; i < THREAD_NUM; i++)
-    {
-        targ[i].id = i + 1;
-        targ[i].cond = cond;
-        targ[i].mutex = mutex;
-        targ[i].semaphore = semaphore;
-        targ[i].idlethreads = idlethreads;
-        targ[i].socket = socket;
-        targ[i].condition = condition;
-        if (pthread_create(&thread[i], NULL, threadfunc, (void *) &targ[i]) != 0)
-            ERR("pthread_create");
-
-    }
-}
 
 int bind_tcp_socket(uint16_t port)
 {
@@ -218,6 +156,8 @@ int bind_tcp_socket(uint16_t port)
 int add_new_client(int sfd)
 {
     int nfd;
+
+    char * askforlogin;
     if ((nfd = TEMP_FAILURE_RETRY(accept(sfd, NULL, NULL))) < 0)
     {
         if (EAGAIN == errno || EWOULDBLOCK == errno)
@@ -225,41 +165,45 @@ int add_new_client(int sfd)
         ERR("accept");
     }
 
+    askforlogin = "Write your login and password divided by space: \n";
+
+    if (TEMP_FAILURE_RETRY(send(nfd, askforlogin, strlen(askforlogin), 0)) == -1)
+        ERR("write");
+
+
+
     return nfd;
 }
 
-void dowork(int socket, pthread_t *thread, thread_arg *targ, pthread_cond_t *cond, pthread_mutex_t *mutex, int *idlethreads, int *cfd, sigset_t *oldmask, int *condition)
+void dowork(int socket)
 {
     int clientfd;
+    sigset_t mask, oldmask;
+    pthread_t thread;
+    User *userArg;
     fd_set base_rfds, rfds;
     FD_ZERO(&base_rfds);
     FD_SET(socket, &base_rfds);
-
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT);
+    sigprocmask(SIG_BLOCK, &mask, &oldmask);
     while (work)
     {
         rfds = base_rfds;
-        if (pselect(socket + 1, &rfds, NULL, NULL, NULL, oldmask) > 0)
+        if (pselect(socket + 1, &rfds, NULL, NULL, NULL, &oldmask) > 0)
         {
             if ((clientfd = add_new_client(socket)) == -1)
                 continue;
-            if (pthread_mutex_lock(mutex) != 0)
-                ERR("pthread_mutex_lock");
-            if (*idlethreads == 0)
-            {
-                if (TEMP_FAILURE_RETRY(close(clientfd)) == -1)
-                    ERR("close");
-                if (pthread_mutex_unlock(mutex) != 0)
-                    ERR("pthread_mutex_unlock");
-            }
-            else
-            {
-                *cfd = clientfd;
-                if (pthread_mutex_unlock(mutex) != 0)
-                    ERR("pthread_mutex_unlock");
-                *condition = 1;
-                if (pthread_cond_signal(cond) != 0)
-                    ERR("pthread_cond_signal");
-            }
+
+            if((userArg=(User*)malloc(sizeof(User)))==NULL)
+                perror("Malloc:");
+
+            userArg->socket = clientfd;
+
+            if (pthread_create(&thread, NULL,threadfunc, (void *)userArg) != 0) perror("Pthread_create");
+            if (pthread_detach(thread) != 0) perror("Pthread_detach");
+
+
         }
         else
         {
@@ -282,35 +226,24 @@ void pcleanup(sem_t *semaphore, pthread_mutex_t *mutex, pthread_cond_t *cond)
 
 int main(int argc, char **argv)
 {
-    int i, condition = 0, socket, new_flags, cfd, idlethreads = 0;
-    pthread_t thread[THREAD_NUM];
-    thread_arg targ[THREAD_NUM];
-    pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-    sigset_t mask, oldmask;
-    sem_t semaphore;
+    int socket, new_flags;
 
-    if (argc!=2)
+    if((atoi(argv[1]) == 0) || (atoi(argv[1]) < 1024 || atoi(argv[1]) > 65535))
+    {
         usage(argv[0]);
+    }
 
-    
     sethandler(SIG_IGN, SIGPIPE);
     sethandler(siginthandler, SIGINT);
-    sigemptyset(&mask);
-    sigaddset(&mask, SIGINT);
-    sigprocmask(SIG_BLOCK, &mask, &oldmask);
-    socket = bind_tcp_socket(atoi(argv[1]));
+
+    socket=bind_tcp_socket(atoi(argv[1]));
     new_flags = fcntl(socket, F_GETFL) | O_NONBLOCK;
-    if (fcntl(socket, F_SETFL, new_flags) == -1)
-        ERR("fcntl");
-    init(thread, targ, &semaphore, &cond, &mutex, &idlethreads, &cfd, &condition);
-    dowork(socket, thread, targ, &cond, &mutex, &idlethreads, &cfd, &oldmask, &condition);
-    if (pthread_cond_broadcast(&cond) != 0)
-        ERR("pthread_cond_broadcast");
-    for (i = 0; i < THREAD_NUM; i++)
-        if (pthread_join(thread[i], NULL) != 0)
-            ERR("pthread_join");
-    pcleanup(&semaphore, &mutex, &cond);
+    fcntl(socket, F_SETFL, new_flags);
+
+
+    dowork(socket);
+
+
     if (TEMP_FAILURE_RETRY(close(socket)) < 0)
         ERR("close");
     return EXIT_SUCCESS;
