@@ -6,6 +6,6 @@ set(CMAKE_CXX_COMPILER "/usr/bin/g++")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror -pthread")
 
-set(SOURCE_FILES main.c)
+set(SOURCE_FILES server.c Utilities.c Utilities.h message_flow.c message_flow.h  structures.h)
 add_executable(UnixProjectFinal ${SOURCE_FILES})
-add_executable(main main.c Utilities.c)
+add_executable(main server.c Utilities.c message_flow.c)

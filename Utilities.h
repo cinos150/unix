@@ -16,11 +16,12 @@
 #define MAXBUFFER 1024
 #define DEFAULTPORT 8080
 
-char** str_split(char* a_str, const char a_delim);
+char * CutFileName(char * fullpath, char fromCrop);
 
-ssize_t bulk_read(int, char *, size_t);
+void strip(char *s);
 
-ssize_t bulk_write(int, char *, size_t);
+
+char * readline(int fd);
 
 void sethandler(void (*)(int), int);
 
