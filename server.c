@@ -80,6 +80,9 @@ void *threadfunc(void *arg) {
         communication_flow(&communication_progress, args, size, response_message, &existing_user,filepath);
     }
 
+    free(args->user_info->profile);
+    free(args->user_info);
+    free(args);
     return NULL;
 }
 
@@ -111,8 +114,8 @@ int bind_tcp_socket(uint16_t port)
 int add_new_client(int sfd)
 {
     int nfd;
+    char * askforlogin = "Write your login:\n";
 
-    char * askforlogin;
     if ((nfd = TEMP_FAILURE_RETRY(accept(sfd, NULL, NULL))) < 0)
     {
         if (EAGAIN == errno || EWOULDBLOCK == errno)
@@ -120,7 +123,7 @@ int add_new_client(int sfd)
         ERR("accept");
     }
 
-    askforlogin = "Write your login:\n";
+
 
     if (TEMP_FAILURE_RETRY(send(nfd, askforlogin, strlen(askforlogin), 0)) == -1)
         ERR("write");
@@ -132,12 +135,15 @@ int add_new_client(int sfd)
 
 void dowork(int socket, char *filepath)
 {
+
     int clientfd;
     sigset_t mask, oldmask;
     pthread_t thread;
     User *userArg;
     Profile *profile;
-    ThreadArg *threadArg;
+
+    ThreadArg *threadArgHead = NULL;
+
     fd_set base_rfds, rfds;
     FD_ZERO(&base_rfds);
     FD_SET(socket, &base_rfds);
@@ -155,23 +161,22 @@ void dowork(int socket, char *filepath)
             if((userArg=(User*)malloc(sizeof(User)))==NULL)
                 perror("Malloc:");
 
-            if((threadArg=(ThreadArg*)malloc(sizeof(ThreadArg)))==NULL)
+            if((threadArgHead=(ThreadArg*)malloc(sizeof(ThreadArg)))==NULL)
                 perror("Malloc:");
 
-            if((threadArg->filePath =(char*)malloc(sizeof(filepath)))==NULL)
+            if((threadArgHead->filePath =(char*)malloc(sizeof(filepath)))==NULL)
                 perror("Malloc:");
 
             if((profile =(Profile*)malloc(sizeof(Profile)))==NULL)
                 perror("Malloc:");
 
-            threadArg->user_info = userArg;
-            threadArg->user_info->profile = profile;
-            threadArg->socket = clientfd;
-            threadArg->filePath =filepath;
+            threadArgHead->user_info = userArg;
+            threadArgHead->user_info->profile = profile;
+            threadArgHead->socket = clientfd;
+            threadArgHead->filePath =filepath;
 
 
-
-            if (pthread_create(&thread, NULL,threadfunc, (void *)threadArg) != 0) perror("Pthread_create");
+            if (pthread_create(&thread, NULL,threadfunc, (void *)threadArgHead) != 0) perror("Pthread_create");
             if (pthread_detach(thread) != 0) perror("Pthread_detach");
 
 
