@@ -1,4 +1,3 @@
-
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,7 +11,7 @@
 #include <pthread.h>
 #include "Utilities.h"
 #include "message_flow.h"
-#include "structures.h"
+#include "LinkedList.h"
 
 
 #define BACKLOG 3
@@ -30,11 +29,9 @@ void siginthandler(int sig)
 
 void usage(char *name)
 {
-    fprintf(stderr, "USAGE: %s port workdir\n",name);
+    fprintf(stderr, "USAGE: %s port\n",name);
     exit(EXIT_FAILURE);
 }
-
-
 
 
 int make_socket(int domain, int type)
@@ -48,8 +45,6 @@ int make_socket(int domain, int type)
 }
 
 
-
-
 void cleanup(void *arg)
 {
     pthread_mutex_unlock((pthread_mutex_t *)arg);
@@ -57,32 +52,44 @@ void cleanup(void *arg)
 
 void *threadfunc(void *arg) {
 
-
     int existing_user = 0;
     char response_message[NMMAX];
     int communication_progress = 0;
-    char * filepath;
     size_t size;
     ThreadArg *args = (ThreadArg *) arg;
 
-    filepath = (char*)malloc(strlen(args->filePath));
+    char directory_path[strlen(args->filepath)+1];
 
+    snprintf(directory_path,sizeof(directory_path),"%s",args->filepath);
 
-    strcpy(filepath,args->filePath);
 
     while (work) {
-        if ((size = TEMP_FAILURE_RETRY(recv(args->socket, &response_message, NMMAX - 1, 0))) == 0)
+
+        directory_path[strlen(args->filepath)] = '\0';
+
+        if((size = recive_message(args->socket,response_message)) ==0)
             break;
+
+
 
         strip(response_message);
         response_message[size - 2] = '\0';
 
-        communication_flow(&communication_progress, args, size, response_message, &existing_user,filepath);
+        if(strlen(response_message)<1)
+        {
+            send_message(args->socket,"no empty inputs please, try again\n");
+            continue;
+        }
+
+       communication_flow(&communication_progress, args, size, response_message, &existing_user,directory_path);
+
     }
 
-    free(args->user_info->profile);
-    free(args->user_info);
-    free(args);
+
+    delete_from_list(args->login);
+
+
+
     return NULL;
 }
 
@@ -114,9 +121,9 @@ int bind_tcp_socket(uint16_t port)
 int add_new_client(int sfd)
 {
     int nfd;
-    char * askforlogin = "Write your login:\n";
+    char * askforlogin = "Write your login (spaces will be ignored):\n";
 
-    if ((nfd = TEMP_FAILURE_RETRY(accept(sfd, NULL, NULL))) < 0)
+    if ((nfd = (int) TEMP_FAILURE_RETRY(accept(sfd, NULL, NULL))) < 0)
     {
         if (EAGAIN == errno || EWOULDBLOCK == errno)
             return -1;
@@ -125,10 +132,7 @@ int add_new_client(int sfd)
 
 
 
-    if (TEMP_FAILURE_RETRY(send(nfd, askforlogin, strlen(askforlogin), 0)) == -1)
-        ERR("write");
-
-
+    send_message(nfd,askforlogin);
 
     return nfd;
 }
@@ -139,10 +143,11 @@ void dowork(int socket, char *filepath)
     int clientfd;
     sigset_t mask, oldmask;
     pthread_t thread;
-    User *userArg;
-    Profile *profile;
+
+
 
     ThreadArg *threadArgHead = NULL;
+
 
     fd_set base_rfds, rfds;
     FD_ZERO(&base_rfds);
@@ -157,23 +162,8 @@ void dowork(int socket, char *filepath)
         {
             if ((clientfd = add_new_client(socket)) == -1)
                 continue;
-
-            if((userArg=(User*)malloc(sizeof(User)))==NULL)
-                perror("Malloc:");
-
-            if((threadArgHead=(ThreadArg*)malloc(sizeof(ThreadArg)))==NULL)
-                perror("Malloc:");
-
-            if((threadArgHead->filePath =(char*)malloc(sizeof(filepath)))==NULL)
-                perror("Malloc:");
-
-            if((profile =(Profile*)malloc(sizeof(Profile)))==NULL)
-                perror("Malloc:");
-
-            threadArgHead->user_info = userArg;
-            threadArgHead->user_info->profile = profile;
-            threadArgHead->socket = clientfd;
-            threadArgHead->filePath =filepath;
+            threadArgHead =  add_to_list(clientfd,cutString(__FILE__,'/'));
+           // threadArgHead =  add_to_list(clientfd,filepath);
 
 
             if (pthread_create(&thread, NULL,threadfunc, (void *)threadArgHead) != 0) perror("Pthread_create");
@@ -196,7 +186,6 @@ int main(int argc, char **argv)
 
 
     int socket, new_flags;
-    char * filePath;
 
     if((atoi(argv[1]) == 0) || (atoi(argv[1]) < 1024 || atoi(argv[1]) > 65535))
     {
@@ -211,8 +200,8 @@ int main(int argc, char **argv)
     new_flags = fcntl(socket, F_GETFL) | O_NONBLOCK;
     fcntl(socket, F_SETFL, new_flags);
 
-    filePath = CutFileName(__FILE__, '/');
-    dowork(socket, filePath);
+
+    dowork(socket,argv[0]);
 
 
     if (TEMP_FAILURE_RETRY(close(socket)) < 0)
