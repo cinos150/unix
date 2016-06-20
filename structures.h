@@ -13,8 +13,13 @@ typedef struct thread_args{
     int socket;
 	char * filepath;
 	char *login;
+	pthread_mutex_t lock;
 	struct thread_args *next;
 
 }ThreadArg;
+
+
+
+
 
 #endif
