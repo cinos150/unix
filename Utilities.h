@@ -8,7 +8,13 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include "structures.h"
 
+void check_and_fill_letter(ThreadArg *args,char letter_chosen, char a, char A, char b, char B, char * filepath, int option, char *wrong_input);
+void check_and_fill_number(ThreadArg *args,int numerical_walues, int left_range , int right_range,char * filepath,int option, char *wrong_input );
+void find_and_replace_in_file(ThreadArg *args, char *filepath, int position_to_replace, char toreplace_letter,int toreplace_number);
+void replace_old_characteristics_with_number(int filesize, char *file_content, int number, char *num_to_string);
+void replace_old_characteristics_letter(int filesize, char *file_content, int number, char toreplace_letter);
 char * choose_label(char * option);
 char * lock_and_read( char *content, char *path_to_file, int * filesize) ;
 void lock_and_write( char *content, char *path_to_file, char *mode);

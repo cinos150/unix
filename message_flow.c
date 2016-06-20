@@ -166,10 +166,13 @@ void find_matching_profile(int socket, char *login, char *filepath) {
 void find_in_other_users(int socket, int num_of_users, char *my_attribute, int chosen_attr, char *filepath,
                          char *directories[]) {
     int i = 0;
-
     char tempArr[num_of_users][NMMAX];
-
     int filesize = 0;
+    char *his_file_content = NULL;
+    char properties[strlen(filepath) + strlen(choose_label("properties_path")) + NMMAX];
+    char *all_particular_user_info;
+    char *specific_attribute_from_that_user;
+
 
 
     for (int l = 0; l < num_of_users; l++) {
@@ -177,11 +180,8 @@ void find_in_other_users(int socket, int num_of_users, char *my_attribute, int c
         tempArr[l][strlen(directories[l])] = '\0';
     }
 
-    char *his_file_content = NULL;
-    char properties[strlen(filepath) + strlen(choose_label("properties_path")) + NMMAX];
+
     memset(properties, 0, sizeof(properties));
-    char *temp;
-    char *temp2;
 
 
     for (; i < num_of_users; i++) {
@@ -190,10 +190,10 @@ void find_in_other_users(int socket, int num_of_users, char *my_attribute, int c
 
 
         snprintf(properties, sizeof(properties), "%s%s%s", filepath, tempArr[i], choose_label("properties_path"));
-        temp = lock_and_read(his_file_content, properties, &filesize);
-        temp2 = read_specific_attribute_from_string(chosen_attr, filesize, temp);
-        free(temp);
-        if (temp2[0] != '\0' && strcmp(my_attribute, temp2) == 0) {
+        all_particular_user_info = lock_and_read(his_file_content, properties, &filesize);
+        specific_attribute_from_that_user = read_specific_attribute_from_string(chosen_attr, filesize, all_particular_user_info);
+        free(all_particular_user_info);
+        if (specific_attribute_from_that_user[0] != '\0' && strcmp(my_attribute, specific_attribute_from_that_user) == 0) {
             send_message(socket, strcat(tempArr[i], " - "));
         }
     }
@@ -495,131 +495,36 @@ void update_profile(ThreadArg *args, char *filepath) {
 
 }
 
-int update_specific_characteristics(ThreadArg *args, int number_choosen, int letter_chosen, int numerical_walues,
+int update_specific_characteristics(ThreadArg *args, int number_choosen, char letter_chosen, int numerical_walues,
                                     char *filepath, char *options_after_wrong_input) {
     enum options_enum {
         zero, sex, weight, age, hair_length, eye
     };
     switch (number_choosen) {
         case sex:
-
-            if (fill_position_char(letter_chosen, 'm', 'M', 'f', 'F')) {
-
-                find_and_replace_in_file(args, filepath, sex, letter_chosen, -1);
-                send_message(args->socket, choose_label("update_profile"));
-            }
-            else
-                send_message(args->socket, options_after_wrong_input);
+            check_and_fill_letter(args,letter_chosen,'m','M','f','F',filepath,sex,options_after_wrong_input);
             break;
         case weight:
-            if (fill_position_number(numerical_walues, 30, 250)) {
-                find_and_replace_in_file(args, filepath, weight, 0, numerical_walues);
-                send_message(args->socket, choose_label("update_profile"));
-            }
-            else
-                send_message(args->socket, options_after_wrong_input);
+            check_and_fill_number(args,numerical_walues,30,250,filepath,weight,options_after_wrong_input);
             break;
         case age:
-            if (fill_position_number(numerical_walues, 18, 99)) {
-                find_and_replace_in_file(args, filepath, age, 0, numerical_walues);
-                send_message(args->socket, choose_label("update_profile"));
-            }
-            else
-                send_message(args->socket, options_after_wrong_input);
+            check_and_fill_number(args,numerical_walues,18,99,filepath,age,options_after_wrong_input);
             break;
         case hair_length:
-            if (fill_position_char(letter_chosen, 'l', 'L', 's', 'S')) {
-                find_and_replace_in_file(args, filepath, hair_length, letter_chosen, -1);
-                send_message(args->socket, choose_label("update_profile"));
-            }
-            else
-                send_message(args->socket, options_after_wrong_input);
+            check_and_fill_letter(args,letter_chosen,'l','L','s','S',filepath,hair_length,options_after_wrong_input);
+
             break;
         case eye:
-            if (fill_position_char(letter_chosen, 'b', 'B', 'g', 'G')) {
-                find_and_replace_in_file(args, filepath, eye, letter_chosen, -1);
-                send_message(args->socket, choose_label("update_profile"));
-            }
-            else
-                send_message(args->socket, options_after_wrong_input);
+            check_and_fill_letter(args,letter_chosen,'b','B','g','G',filepath,eye,options_after_wrong_input);
             break;
-
-
         default:
             return -1;
-
-
     }
 
     return 0;
 }
 
 
-void find_and_replace_in_file(ThreadArg *args, char *filepath, int position_to_replace, char toreplace_letter,
-                              int toreplace_number) {
-    char numtostr[MAX_PREFERENCE_INPUT];
-    char *property_path = choose_label("properties_path");
-    char *user_login = args->login;
-    int filesize = 0;
-    char full_properties_path[strlen(filepath) + strlen(property_path) + strlen(user_login) + 1];
-    snprintf(full_properties_path, sizeof(full_properties_path), "%s%s%s", filepath, user_login, property_path);
-
-    if (toreplace_number != -1) {
-        sprintf(numtostr, "%d", toreplace_number);
-    }
-
-    char *file_cont = NULL;
-    file_cont = lock_and_read(file_cont, full_properties_path, &filesize);
-
-
-    (toreplace_number != -1) ?
-    replace_old_characteristics_with_number(filesize, file_cont, position_to_replace, numtostr)
-                             : replace_old_characteristics_letter(filesize, file_cont, position_to_replace,
-                                                                  toreplace_letter);
-
-    lock_and_write(file_cont, full_properties_path, "w+");
-
-    file_cont = NULL;
-
-
-}
-
-
-void replace_old_characteristics_with_number(int filesize, char *file_content, int number, char *num_to_string) {
-    int j = 0;
-    int counter = 0;
-    for (int i = 0; i < filesize; i++) {
-        if (file_content[i] != ';')
-            continue;
-        counter++;
-        if (counter != number)
-            continue;
-
-        while (j < MAX_PREFERENCE_INPUT) {
-            file_content[i + j + 1] = (char) ((num_to_string[j] != '\0') ?
-                                              num_to_string[j] : ' ');
-            j++;
-        }
-        return;
-
-    }
-}
-
-
-void replace_old_characteristics_letter(int filesize, char *file_content, int number, char toreplace_letter) {
-    int counter = 0;
-    for (int i = 0; i < filesize; i++) {
-        if (file_content[i] != ';')
-            continue;
-        counter++;
-
-        if (counter == number) {
-            file_content[1 + i] = toreplace_letter;
-            return;
-        }
-
-    }
-}
 
 
 int login_part(ThreadArg *args, size_t size, char *response_message, char *path_to_users) {
@@ -648,12 +553,11 @@ int login_part(ThreadArg *args, size_t size, char *response_message, char *path_
 
 int password_part(ThreadArg *args, int *existing_user, char *response_message, char *pathcurr, char *options) {
     char *tempPath;
-    FILE *pFile = NULL;
     int output_value;
     struct stat t;
     int filesize = 0;
-    strcat(pathcurr, args->login);
     char *pendinginfo = NULL;
+    strcat(pathcurr, args->login);
 
     if ((tempPath = (char *) malloc(strlen(pathcurr))) == NULL)
         perror("Malloc:");
@@ -661,7 +565,7 @@ int password_part(ThreadArg *args, int *existing_user, char *response_message, c
     strcpy(tempPath, pathcurr);
     output_value = (*existing_user == 0) ?
                    new_user(args, pathcurr, options, response_message)
-                                         : user_exists(args, pFile, response_message, options, tempPath);
+                                         : user_exists(args, response_message, options, tempPath);
 
 
     if (stat(strcat(tempPath, choose_label("pending")), &t) == -1) {
@@ -681,7 +585,7 @@ int password_part(ThreadArg *args, int *existing_user, char *response_message, c
     return output_value;
 }
 
-int user_exists(ThreadArg *args, FILE *pFile, char *response_message, char *options, char *pathcurr) {
+int user_exists(ThreadArg *args, char *response_message, char *options, char *pathcurr) {
     char *wrong_password = "Wrong password \nWrite your login:\n";
     char *password = choose_label("password_path");
 
@@ -733,7 +637,7 @@ int new_user(ThreadArg *args, char *pathcurr, char *options, char *password) {
 
     snprintf(outputAscii, strlen(pathcurr) + strlen(local_ascii_file), "%s%s", pathcurr, local_ascii_file);
 
-    srand(getpid());
+    srand((unsigned int) getpid());
     r = rand() % 5 + 1;
     snprintf(ascii_part, strlen(args->filepath) + strlen(ascii_path) + sizeof(int), "%s%s%d", args->filepath,
              ascii_path, r);

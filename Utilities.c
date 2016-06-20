@@ -337,3 +337,91 @@ int listdir(const char *name, char *my_name, int look_for_his_own, char *directo
     return i;
 }
 
+
+void check_and_fill_letter(ThreadArg *args,char letter_chosen, char a, char A, char b, char B, char * filepath, int option, char *wrong_input)
+{
+    if (fill_position_char(letter_chosen, a, A, b, B)) {
+        find_and_replace_in_file(args, filepath, option, letter_chosen, -1);
+        send_message(args->socket, choose_label("update_profile"));
+    }
+    else
+        send_message(args->socket, wrong_input);
+}
+
+void check_and_fill_number(ThreadArg *args,int numerical_walues, int left_range , int right_range,char * filepath,int option, char *wrong_input )
+{
+    if (fill_position_number(numerical_walues, left_range, right_range)) {
+        find_and_replace_in_file(args, filepath, option, 0, numerical_walues);
+        send_message(args->socket, choose_label("update_profile"));
+    }
+    else
+        send_message(args->socket, wrong_input);
+}
+
+void find_and_replace_in_file(ThreadArg *args, char *filepath, int position_to_replace, char toreplace_letter,
+                              int toreplace_number) {
+    char numtostr[MAX_PREFERENCE_INPUT];
+    char *property_path = choose_label("properties_path");
+    char *user_login = args->login;
+    int filesize = 0;
+    char *file_cont = NULL;
+    char full_properties_path[strlen(filepath) + strlen(property_path) + strlen(user_login) + 1];
+    snprintf(full_properties_path, sizeof(full_properties_path), "%s%s%s", filepath, user_login, property_path);
+
+    if (toreplace_number != -1) {
+        sprintf(numtostr, "%d", toreplace_number);
+    }
+
+    file_cont = lock_and_read(file_cont, full_properties_path, &filesize);
+
+
+    (toreplace_number != -1) ?
+    replace_old_characteristics_with_number(filesize, file_cont, position_to_replace, numtostr)
+                             : replace_old_characteristics_letter(filesize, file_cont, position_to_replace,
+                                                                  toreplace_letter);
+
+    lock_and_write(file_cont, full_properties_path, "w+");
+
+    file_cont = NULL;
+
+
+}
+
+
+void replace_old_characteristics_with_number(int filesize, char *file_content, int number, char *num_to_string) {
+    int j = 0;
+    int counter = 0;
+    for (int i = 0; i < filesize; i++) {
+        if (file_content[i] != ';')
+            continue;
+        counter++;
+        if (counter != number)
+            continue;
+
+        while (j < MAX_PREFERENCE_INPUT) {
+            file_content[i + j + 1] = (char) ((num_to_string[j] != '\0') ?
+                                              num_to_string[j] : ' ');
+            j++;
+        }
+        return;
+
+    }
+}
+
+
+void replace_old_characteristics_letter(int filesize, char *file_content, int number, char toreplace_letter) {
+    int counter = 0;
+    for (int i = 0; i < filesize; i++) {
+        if (file_content[i] != ';')
+            continue;
+        counter++;
+
+        if (counter == number) {
+            file_content[1 + i] = toreplace_letter;
+            return;
+        }
+
+    }
+}
+
+
